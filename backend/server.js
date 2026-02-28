@@ -12,6 +12,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = 5000;
+const logger = { info: console.log, warn: console.warn, error: console.error };
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -27,6 +28,18 @@ const upload = multer({ storage });
 // ─── Detailed fallback data per disease ─────────────────────────────────────
 
 const DISEASE_DATA = {
+  Not_Cucumber_Leaf: {
+    ai_explanation: {
+      root_cause: "The uploaded image does not match the visual patterns of cucumber leaves used in the trained dataset. This can happen when the image contains a different plant species, non-leaf object, heavy blur, low light, or a cropped region without clear cucumber leaf features.",
+      symptoms: "Model signals are ambiguous for cucumber classes. The texture, venation, shape, and color distribution do not align strongly with known cucumber leaf disease patterns. This result indicates input mismatch rather than a confirmed cucumber diagnosis.",
+      prevention: "Before analysis: (1) Upload only cucumber leaf images. (2) Capture a single clear leaf in daylight. (3) Keep the full leaf visible, including veins and margins. (4) Avoid shadows, blur, and cluttered backgrounds. (5) Use close-up shots with good focus.",
+      early_detection: "If you suspect disease, re-capture the image with better clarity and confirm that the plant is cucumber. Take 2-3 photos from different angles (front and back of leaf) and re-run analysis for consistency.",
+      farmer_loss: "No disease estimate is provided because the sample is outside the trained cucumber domain. Economic impact cannot be calculated from this image.",
+      treatment: "No treatment recommendation is generated for non-cucumber inputs. Please upload a valid cucumber leaf image for disease-specific guidance.",
+    },
+    metrics: { severity: 0, spread_risk: 0, treatment_urgency: 0, recovery_chance: 0, yield_impact: 0 }
+  },
+
   Healthy_leaves: {
     ai_explanation: {
       root_cause: "No disease detected — the cucumber leaf appears healthy with normal green coloration, intact cell structure, and no visible signs of fungal, bacterial, or viral infection. The plant is receiving adequate nutrients, water, and sunlight for proper photosynthesis.",
@@ -64,6 +77,165 @@ const DISEASE_DATA = {
   }
 };
 
+// ─── Farmer feature fallback data ────────────────────────────────────────────
+
+const FARMER_FALLBACK = {
+  Downy_mildew: {
+    crop_loss: {
+      min: 30, max: 70,
+      explanation: 'Downy mildew spreads very fast in humid weather. If not treated early, it can destroy 30 to 70% of your cucumber crop.',
+    },
+    india_advice: {
+      root_cause: 'In Indian farms, downy mildew commonly appears during monsoon season (June–September) when humidity is very high, above 85%. Cool nights followed by warm days create ideal conditions for this disease.',
+      when: 'Most common during June to September (monsoon). In some areas it also appears in January–February with heavy morning dew.',
+      prevention: '1. Water only at the base of plants, not on leaves.\n2. Keep plants 18–24 inches apart for good airflow.\n3. Apply copper-based fungicide before monsoon starts.\n4. Use resistant varieties like "Bristol" or "Citadel".',
+      treatment: '1. Remove all infected leaves and dispose far from your farm.\n2. Spray Metalaxyl or Chlorothalonil fungicide immediately.\n3. Reduce watering frequency.\n4. Re-spray every 5–7 days until the disease stops.',
+    },
+    ignored_timeline: {
+      week1: 'Yellow-green spots grow bigger on leaves. Disease starts spreading to nearby plants through wind.',
+      week2: 'Leaves turn brown and dry out. Fewer flowers appear and fruits become smaller.',
+      week3: 'Plants become very weak. Most fruits stop growing. Disease spreads to the whole farm.',
+      final_loss: '30–70% crop loss is expected if disease is completely ignored for 3 weeks.',
+    },
+    urgency_explanation: 'Downy mildew spreads very fast in humid weather. Every day without treatment means more plants get infected. Act immediately to save your crop.',
+  },
+  Powdery_mildew: {
+    crop_loss: {
+      min: 20, max: 50,
+      explanation: 'Powdery mildew weakens plants slowly and can cause 20 to 50% yield loss by making fruits smaller and reducing production.',
+    },
+    india_advice: {
+      root_cause: 'In Indian farms, powdery mildew is common in warm, dry weather (25–30°C) with moderate humidity. It often appears after monsoon when days are warm but drier.',
+      when: 'Most common in April–June (summer) and October–November (post-monsoon). Can appear any time temperature stays between 25–30°C.',
+      prevention: '1. Space plants at least 18 inches apart for good airflow.\n2. Do not use too much nitrogen fertilizer.\n3. Apply sulfur-based fungicide every 10–14 days.\n4. Water plants in the morning so leaves dry before evening.',
+      treatment: '1. Remove leaves that are more than 50% covered in white powder.\n2. Spray Myclobutanil or wettable sulfur fungicide immediately.\n3. For organic treatment: spray neem oil or baking soda solution.\n4. Repeat spray every 7–10 days, alternating different fungicides.',
+    },
+    ignored_timeline: {
+      week1: 'White powdery spots grow and spread to more leaves. Leaf edges start turning yellow.',
+      week2: 'Leaves curl and become dry. Plant growth slows and fruit size reduces.',
+      week3: 'Most leaves are covered in white powder. Fruits get sunburned due to lack of leaf cover.',
+      final_loss: '20–50% yield loss expected if untreated for 3 weeks. Market value of fruits also drops.',
+    },
+    urgency_explanation: 'Powdery mildew spreads through wind and can quickly cover the whole farm. Treating early can save 50–80% of the remaining crop.',
+  },
+  Healthy_leaves: {
+    crop_loss: {
+      min: 0, max: 0,
+      explanation: 'Your crop is healthy! No disease detected. Continue your current care routine to maintain zero crop loss.',
+    },
+    india_advice: {
+      root_cause: 'Your cucumber plant is healthy. No disease has been found. Your current farming practices are working well.',
+      when: 'Keep monitoring your crop twice a week. Be extra careful before and during monsoon season (May–June).',
+      prevention: '1. Water only at the base of plants, never from above.\n2. Maintain proper spacing between plants.\n3. Apply balanced NPK fertilizer every 2–3 weeks.\n4. Remove weeds regularly.',
+      treatment: 'No treatment needed. Your plant is healthy. Just continue your regular care routine and keep monitoring.',
+    },
+    ignored_timeline: {
+      week1: 'Plant remains healthy with regular care and monitoring.',
+      week2: 'Without proper monitoring, early disease signs might be missed.',
+      week3: 'Lack of attention can allow small issues to grow into bigger problems.',
+      final_loss: 'No crop loss expected if you continue regular care and monitoring.',
+    },
+    urgency_explanation: 'No treatment needed — your plant is healthy! Keep monitoring your crop regularly to catch any early signs of disease.',
+  },
+  Not_Cucumber_Leaf: {
+    crop_loss: {
+      min: 0, max: 0,
+      explanation: 'Cannot estimate crop loss — the uploaded image does not appear to be a cucumber leaf.',
+    },
+    india_advice: {
+      root_cause: 'The uploaded image was not recognized as a cucumber leaf.',
+      when: 'Please upload a clear, close-up photo of a cucumber leaf for accurate results.',
+      prevention: 'Ensure good lighting and the leaf fills most of the frame when photographing.',
+      treatment: 'No treatment recommendation — please re-upload a valid cucumber leaf image.',
+    },
+    ignored_timeline: {
+      week1: 'Cannot analyze — image not recognized as cucumber leaf.',
+      week2: 'Please upload a valid cucumber leaf image.',
+      week3: 'No timeline data available for non-cucumber images.',
+      final_loss: 'Cannot estimate — please re-upload a valid cucumber leaf image.',
+    },
+    urgency_explanation: 'Cannot determine urgency — the uploaded image does not appear to be a cucumber leaf. Please try again with a proper photo.',
+  },
+};
+
+function getUrgencyLevel(confidence, disease) {
+  if (!disease || disease === 'Not_Cucumber_Leaf') return 'UNKNOWN';
+  if (disease === 'Healthy_leaves') return 'NONE';
+  if (confidence < 60) return 'LOW';
+  if (confidence < 80) return 'MEDIUM';
+  if (confidence < 90) return 'HIGH';
+  return 'CRITICAL';
+}
+
+// ─── Kannada voice fallback (clean 3-line text per disease) ──────────────────
+
+const KANNADA_FALLBACK = {
+  Downy_mildew:
+    'ಎಲೆಗಳ ಮೇಲೆ ಹೆಚ್ಚು ತೇವಾಂಶದಿಂದ ಈ ರೋಗ ಬರುತ್ತದೆ.\nತಕ್ಷಣ ಫಂಗಿಸೈಡ್ ಔಷಧ ಸಿಂಪಡಿಸಿ.\nಚಿಕಿತ್ಸೆ ಮಾಡದಿದ್ದರೆ ೩೦ ರಿಂದ ೭೦ ಪ್ರತಿಶತ ಬೆಳೆ ನಷ್ಟವಾಗಬಹುದು.',
+  Powdery_mildew:
+    'ಬಿಸಿಲಿನ ಹವೆಯಲ್ಲಿ ಶಿಲೀಂಧ್ರದಿಂದ ಈ ರೋಗ ಉಂಟಾಗುತ್ತದೆ.\nಗಂಧಕ ಅಥವಾ ನೀಮ್ ಎಣ್ಣೆ ಸಿಂಪಡಿಸಿ.\nಚಿಕಿತ್ಸೆ ಮಾಡದಿದ್ದರೆ ೨೦ ರಿಂದ ೫೦ ಪ್ರತಿಶತ ಬೆಳೆ ಹಾಳಾಗಬಹುದು.',
+  Healthy_leaves:
+    'ನಿಮ್ಮ ಸೌತೆಕಾಯಿ ಎಲೆ ಆರೋಗ್ಯಕರವಾಗಿದೆ.\nಯಾವುದೇ ಚಿಕಿತ್ಸೆ ಅಗತ್ಯವಿಲ್ಲ, ಆದರೆ ನಿಯಮಿತವಾಗಿ ಗಮನಿಸಿ.\nಸರಿಯಾದ ನೀರಾವರಿ ಮತ್ತು ಗೊಬ್ಬರ ನೀಡಿ.',
+  Not_Cucumber_Leaf:
+    'ಈ ಚಿತ್ರ ಸೌತೆಕಾಯಿ ಎಲೆಯಲ್ಲ.\nದಯವಿಟ್ಟು ಸ್ಪಷ್ಟವಾದ ಸೌತೆಕಾಯಿ ಎಲೆಯ ಚಿತ್ರ ಅಪ್‌ಲೋಡ್ ಮಾಡಿ.\nರೋಗ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ.',
+};
+
+function _isValidKannada(text) {
+  if (!text || typeof text !== 'string') return false;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length !== 3) return false;
+  // Reject if any line has ASCII letters (English words)
+  if (/[a-zA-Z]{3,}/.test(text)) return false;
+  // Must contain at least some Kannada Unicode range (\u0C80-\u0CFF)
+  if (!/[\u0C80-\u0CFF]/.test(text)) return false;
+  return true;
+}
+
+async function getKannadaVoiceText(disease) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const fallback = KANNADA_FALLBACK[disease] || KANNADA_FALLBACK['Healthy_leaves'];
+
+  if (!apiKey || apiKey === 'YOUR_API_KEY_HERE') return fallback;
+  if (disease === 'Not_Cucumber_Leaf') return KANNADA_FALLBACK['Not_Cucumber_Leaf'];
+
+  const diseaseName = disease.replace(/_/g, ' ');
+
+  const prompt = `Generate Kannada voice advice for cucumber disease: ${diseaseName}
+
+Strict rules:
+1. Output must be ONLY Kannada script. No English words at all.
+2. Output must contain exactly 3 lines.
+3. Line 1 = one short sentence about the cause of this disease.
+4. Line 2 = one short sentence about what treatment to do immediately.
+5. Line 3 = one short sentence about how much crop loss if untreated.
+6. Use very simple everyday Kannada words that a farmer can understand.
+7. Do NOT include headings, labels, numbers, bullet points, or symbols.
+8. Do NOT include any explanation or extra text.
+9. Each line must be one sentence only.
+10. Output nothing except these 3 Kannada lines separated by newlines.`;
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const gModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const gResult = await gModel.generateContent(prompt);
+    let raw = gResult.response.text().trim();
+    // Strip any markdown code fences
+    raw = raw.replace(/```[\s\S]*?```/g, '').replace(/`/g, '').trim();
+    // Normalize line endings and remove blank lines
+    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const cleaned = lines.slice(0, 3).join('\n');
+    if (_isValidKannada(cleaned)) {
+      logger.info('Kannada voice text generated via Gemini');
+      return cleaned;
+    }
+    logger.warn('Kannada validation failed, using fallback. Got: ' + raw.substring(0, 80));
+    return fallback;
+  } catch (err) {
+    logger.error('Kannada voice Gemini error: ' + err.message);
+    return fallback;
+  }
+}
+
 // ─── Gemini integration ─────────────────────────────────────────────────────
 
 async function getGeminiExplanation(disease, confidence) {
@@ -73,7 +245,7 @@ async function getGeminiExplanation(disease, confidence) {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
   const diseaseName = disease.replace(/_/g, ' ');
 
@@ -159,13 +331,19 @@ app.post('/api/predict', upload.single('image'), async (req, res) => {
       throw err;
     }
 
-    const { disease, confidence, all_predictions } = mlResponse.data;
+    const {
+      disease,
+      confidence,
+      all_predictions,
+      is_cucumber_leaf,
+      message,
+    } = mlResponse.data;
 
     // Get AI explanation — try Gemini first, fall back to detailed local data
     let ai_explanation, metrics;
     const fallback = DISEASE_DATA[disease] || DISEASE_DATA['Healthy_leaves'];
 
-    if (disease === 'Healthy_leaves') {
+    if (disease === 'Healthy_leaves' || disease === 'Not_Cucumber_Leaf') {
       ai_explanation = fallback.ai_explanation;
       metrics = fallback.metrics;
     } else {
@@ -197,13 +375,19 @@ app.post('/api/predict', upload.single('image'), async (req, res) => {
       }
     }
 
+    // Generate dedicated Kannada voice text
+    const voiceText = await getKannadaVoiceText(disease);
+
     return res.json({
       success: true,
       disease,
       confidence,
       all_predictions,
+      is_cucumber_leaf,
+      message,
       ai_explanation,
       metrics,
+      voiceText,
     });
   } catch (err) {
     console.error('Prediction error:', err.message);
@@ -303,6 +487,247 @@ app.post('/api/report', async (req, res) => {
   } catch (err) {
     console.error('Report generation error:', err.message);
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── Farmer features endpoint ─────────────────────────────────────────────────
+
+app.post('/api/farmer-features', async (req, res) => {
+  const { disease, confidence } = req.body;
+  if (!disease) return res.status(400).json({ success: false, error: 'Disease required' });
+
+  const urgency_level = getUrgencyLevel(confidence, disease);
+  const fallback = FARMER_FALLBACK[disease] || FARMER_FALLBACK['Healthy_leaves'];
+
+  let crop_loss = { ...fallback.crop_loss };
+  let india_advice = { ...fallback.india_advice };
+  let ignored_timeline = { ...fallback.ignored_timeline };
+  let urgency_explanation = fallback.urgency_explanation;
+  // kannada_voice_text is now generated in /api/predict via getKannadaVoiceText()
+  // but we keep a fallback here for standalone calls
+  const kannada_voice_text = KANNADA_FALLBACK[disease] || KANNADA_FALLBACK['Healthy_leaves'];
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (apiKey && apiKey !== 'YOUR_API_KEY_HERE' && disease !== 'Not_Cucumber_Leaf') {
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const gModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const diseaseName = disease.replace(/_/g, ' ');
+
+      const prompt = `You are an agricultural expert helping Indian cucumber farmers. Respond ONLY with valid JSON (no markdown, no code blocks, no backticks).
+Disease: ${diseaseName}
+Confidence: ${confidence}%
+Urgency Level: ${urgency_level}
+
+Required JSON:
+{
+  "crop_loss_min": number,
+  "crop_loss_max": number,
+  "crop_loss_explanation": "1-2 simple sentences",
+  "india_root_cause": "1-2 sentences about why this occurs in Indian farms, mention monsoon/humidity/temperature",
+  "india_when": "which season/months in India",
+  "india_prevention": "3-4 numbered practical steps for Indian farmers",
+  "india_treatment": "3-4 numbered immediate treatment steps",
+  "week1": "1 sentence what happens in week 1 if ignored",
+  "week2": "1 sentence what happens in week 2 if ignored",
+  "week3": "1 sentence what happens in week 3 if ignored",
+  "final_loss": "1 sentence total crop loss if completely ignored",
+  "urgency_explanation": "2-3 simple sentences why urgency is ${urgency_level}"
+}`;
+
+      const gResult = await gModel.generateContent(prompt);
+      let gText = gResult.response.text().trim().replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+      const p = JSON.parse(gText);
+
+      crop_loss = {
+        min: p.crop_loss_min ?? fallback.crop_loss.min,
+        max: p.crop_loss_max ?? fallback.crop_loss.max,
+        explanation: p.crop_loss_explanation ?? fallback.crop_loss.explanation,
+      };
+      india_advice = {
+        root_cause: p.india_root_cause ?? fallback.india_advice.root_cause,
+        when: p.india_when ?? fallback.india_advice.when,
+        prevention: p.india_prevention ?? fallback.india_advice.prevention,
+        treatment: p.india_treatment ?? fallback.india_advice.treatment,
+      };
+      ignored_timeline = {
+        week1: p.week1 ?? fallback.ignored_timeline.week1,
+        week2: p.week2 ?? fallback.ignored_timeline.week2,
+        week3: p.week3 ?? fallback.ignored_timeline.week3,
+        final_loss: p.final_loss ?? fallback.ignored_timeline.final_loss,
+      };
+      urgency_explanation = p.urgency_explanation ?? fallback.urgency_explanation;
+    } catch (err) {
+      console.error('Farmer features Gemini error:', err.message);
+    }
+  }
+
+  return res.json({
+    success: true,
+    urgency_level,
+    crop_loss,
+    india_advice,
+    ignored_timeline,
+    urgency_explanation,
+    kannada_voice_text,
+  });
+});
+
+// ─── Translation endpoint ──────────────────────────────────────────────────────
+
+app.post('/api/translate', async (req, res) => {
+  const { texts, language } = req.body;
+  if (!texts || language === 'en') return res.json({ success: true, translated: texts });
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'YOUR_API_KEY_HERE') {
+    return res.json({ success: false, translated: texts, error: 'Gemini API not configured' });
+  }
+
+  try {
+    const langNames = { hi: 'Hindi', kn: 'Kannada' };
+    const langName = langNames[language] || language;
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const gModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    const prompt = `Translate the following JSON object values into simple, farmer-friendly ${langName}. Keep the language easy to understand. Do not translate the JSON keys. Return ONLY valid JSON with the same keys but translated values. No markdown, no code blocks.
+${JSON.stringify(texts)}`;
+
+    const gResult = await gModel.generateContent(prompt);
+    let gText = gResult.response.text().trim().replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+    const translated = JSON.parse(gText);
+    return res.json({ success: true, translated });
+  } catch (err) {
+    console.error('Translation error:', err.message);
+    return res.json({ success: false, translated: texts });
+  }
+});
+
+// ─── Quick farmer report PDF ──────────────────────────────────────────────────
+
+app.post('/api/quick-report', async (req, res) => {
+  try {
+    const { disease, confidence, urgency_level, crop_loss, india_advice, ignored_timeline, urgency_explanation } = req.body;
+    if (!disease) return res.status(400).json({ success: false, error: 'Disease data required' });
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=Farmer-Quick-Report.pdf');
+    doc.pipe(res);
+
+    const diseaseName = disease.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const urgencyColors = { LOW: '#16A34A', MEDIUM: '#CA8A04', HIGH: '#EA580C', CRITICAL: '#DC2626', NONE: '#16A34A', UNKNOWN: '#9CA3AF' };
+    const urgencyColor = urgencyColors[urgency_level] || '#9CA3AF';
+    const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    // Header bar
+    doc.rect(0, 0, doc.page.width, 70).fill('#1B4332');
+    doc.fillColor('#FFFFFF').fontSize(20).font('Helvetica-Bold').text('CucumberGuard', 50, 14, { align: 'center' });
+    doc.fontSize(10).font('Helvetica').text('Quick Farmer Disease Report', 50, 40, { align: 'center' });
+    doc.fillColor('#000000');
+    doc.moveDown(3);
+    doc.fontSize(9).fillColor('#6B7280').text(`Report Date: ${dateStr}`, { align: 'right' });
+    doc.moveDown(0.5);
+
+    // Disease box
+    const boxY = doc.y;
+    doc.rect(50, boxY, doc.page.width - 100, 54).fill('#F0FDF4').stroke('#A7F3D0');
+    doc.fillColor('#065F46').fontSize(10).font('Helvetica-Bold').text('DISEASE DETECTED', 65, boxY + 8);
+    doc.fontSize(17).text(diseaseName, 65, boxY + 24);
+    doc.fontSize(11).font('Helvetica').fillColor('#374151').text(`Confidence: ${confidence}%`, doc.page.width - 165, boxY + 26, { width: 115, align: 'right' });
+    doc.fillColor('#000000');
+    doc.y = boxY + 62;
+
+    // Urgency
+    doc.moveDown(0.5);
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#1B4332').text('Treatment Urgency');
+    doc.moveDown(0.3);
+    const urgY = doc.y;
+    doc.rect(50, urgY, 130, 28).fill(urgencyColor);
+    doc.fillColor('#FFFFFF').fontSize(13).font('Helvetica-Bold').text(urgency_level || 'N/A', 50, urgY + 6, { width: 130, align: 'center' });
+    doc.fillColor('#000000');
+    doc.y = urgY + 36;
+    doc.moveDown(0.2);
+    if (urgency_explanation) {
+      doc.fontSize(10).font('Helvetica').fillColor('#444444').text(urgency_explanation, { lineGap: 2 });
+    }
+
+    // Crop loss
+    doc.moveDown(0.7);
+    doc.fontSize(13).font('Helvetica-Bold').fillColor('#1B4332').text('Expected Crop Loss');
+    doc.moveDown(0.2);
+    if (crop_loss) {
+      doc.fontSize(22).font('Helvetica-Bold').fillColor(crop_loss.min === 0 ? '#16A34A' : '#DC2626').text(`${crop_loss.min}% – ${crop_loss.max}%`);
+      doc.moveDown(0.1);
+      doc.fontSize(10).font('Helvetica').fillColor('#444444').text(crop_loss.explanation || '', { lineGap: 2 });
+    }
+
+    // Root cause + treatment
+    if (india_advice) {
+      doc.moveDown(0.7);
+      doc.fontSize(13).font('Helvetica-Bold').fillColor('#1B4332').text('Root Cause');
+      doc.moveDown(0.2);
+      doc.fontSize(10).font('Helvetica').fillColor('#444444').text(india_advice.root_cause || '', { lineGap: 2 });
+      doc.moveDown(0.7);
+      doc.fontSize(13).font('Helvetica-Bold').fillColor('#1B4332').text('Treatment Steps');
+      doc.moveDown(0.2);
+      doc.fontSize(10).font('Helvetica').fillColor('#444444').text(india_advice.treatment || '', { lineGap: 2 });
+    }
+
+    // Ignored timeline
+    if (ignored_timeline) {
+      doc.moveDown(0.7);
+      doc.fontSize(13).font('Helvetica-Bold').fillColor('#1B4332').text('What Happens If Ignored');
+      doc.moveDown(0.2);
+      doc.fontSize(10).font('Helvetica').fillColor('#444444');
+      doc.text(`Week 1: ${ignored_timeline.week1 || ''}`);
+      doc.text(`Week 2: ${ignored_timeline.week2 || ''}`);
+      doc.text(`Week 3: ${ignored_timeline.week3 || ''}`);
+      doc.moveDown(0.2);
+      doc.font('Helvetica-Bold').fillColor('#DC2626').text(`Final Result: ${ignored_timeline.final_loss || ''}`);
+    }
+
+    // Footer
+    doc.moveDown(2);
+    doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).lineWidth(0.5).stroke('#D1D5DB');
+    doc.moveDown(0.4);
+    doc.fontSize(8).font('Helvetica-Oblique').fillColor('#9CA3AF').text('Generated by CucumberGuard AI · For educational purposes only · Consult a local agricultural expert for confirmation.', { align: 'center' });
+    doc.end();
+  } catch (err) {
+    console.error('Quick report error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── Kannada TTS proxy via Google Translate ────────────────────────────────
+app.post('/api/speak', async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: 'No text provided' });
+
+  try {
+    // Split by newline so each sentence stays within Google TTS char limit
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const buffers = [];
+
+    for (const line of lines) {
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(line)}&tl=kn&client=tw-ob&ttsspeed=0.8`;
+      const r = await axios.get(url, {
+        responseType: 'arraybuffer',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://translate.google.com/',
+        },
+        timeout: 10000,
+      });
+      buffers.push(Buffer.from(r.data));
+    }
+
+    // Concatenated MP3 buffers play fine as a continuous audio stream
+    res.set('Content-Type', 'audio/mpeg');
+    res.send(Buffer.concat(buffers));
+  } catch (err) {
+    logger.error('TTS proxy error: ' + err.message);
+    res.status(500).json({ error: 'TTS service unavailable' });
   }
 });
 
